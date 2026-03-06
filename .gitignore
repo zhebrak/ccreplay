@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.mp4
+!media/demo.mp4
+ffmpeg
+.ccvid-tmp/
+.DS_Store
