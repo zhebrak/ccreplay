@@ -1,17 +1,15 @@
 import { createCanvas, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
-import { COLORS, LAYOUT, GEOMETRY, TOOL_ACCENT } from "./theme.js";
+import { COLORS, LAYOUT, GEOMETRY, TOOL_ACCENT, WINDOW_CONTROLS, withAlpha } from "./theme.js";
 import { TerminalState } from "./terminal-state.js";
 import type { AllocatedEntry } from "../timeline/budget-allocator.js";
 import type { ParsedSession } from "../parser/parse-session.js";
 import { formatDuration, truncate } from "../util/format.js";
-import { ensureFonts, font } from "./fonts.js";
+import { font } from "./fonts.js";
 import { roundRect, roundRectTop } from "./canvas-helpers.js";
 import { drawIntroCard } from "./draw-intro.js";
 import { drawOutroCard } from "./draw-outro.js";
 import { drawStatusBar } from "./draw-status-bar.js";
 import { drawTerminalBody } from "./draw-terminal-body.js";
-
-const { termX: TERM_X, termY: TERM_Y, termW: TERM_W, termH: TERM_H } = GEOMETRY;
 
 export class FrameRenderer {
   private canvas: Canvas;
@@ -22,6 +20,7 @@ export class FrameRenderer {
   private introFrames: number;
   private outroFrames: number;
   private lingerFrames: number;
+  private contentFrames: number;
   private termState: TerminalState;
   private builtUpToEntry: number = -1;
   private lastEntryIdx: number = 0;
@@ -30,7 +29,6 @@ export class FrameRenderer {
   private lingerCache: Canvas | null = null;
 
   constructor(session: ParsedSession, entries: AllocatedEntry[], totalFrames: number, introFrames: number, outroFrames: number, lingerFrames: number) {
-    ensureFonts();
     this.canvas = createCanvas(LAYOUT.width, LAYOUT.height);
     this.ctx = this.canvas.getContext("2d");
     this.session = session;
@@ -39,6 +37,7 @@ export class FrameRenderer {
     this.introFrames = introFrames;
     this.outroFrames = outroFrames;
     this.lingerFrames = lingerFrames;
+    this.contentFrames = totalFrames - introFrames - outroFrames - lingerFrames;
     this.termState = new TerminalState();
     this.ctx.font = font(LAYOUT.fontSize);
 
@@ -71,13 +70,13 @@ export class FrameRenderer {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = LAYOUT.shadowOffsetY;
     ctx.fillStyle = COLORS.background;
-    roundRect(ctx, TERM_X, TERM_Y, TERM_W, TERM_H, LAYOUT.windowRadius);
+    roundRect(ctx, GEOMETRY.termX, GEOMETRY.termY, GEOMETRY.termW, GEOMETRY.termH, LAYOUT.windowRadius);
     ctx.fill();
     ctx.restore();
 
     // Terminal window body (overdraws shadow rect with crisp fill)
     ctx.fillStyle = COLORS.background;
-    roundRect(ctx, TERM_X, TERM_Y, TERM_W, TERM_H, LAYOUT.windowRadius);
+    roundRect(ctx, GEOMETRY.termX, GEOMETRY.termY, GEOMETRY.termW, GEOMETRY.termH, LAYOUT.windowRadius);
     ctx.fill();
 
     // Title bar (static — never changes between content frames)
@@ -91,27 +90,30 @@ export class FrameRenderer {
 
     // Background with rounded top corners
     ctx.fillStyle = COLORS.titleBarBg;
-    roundRectTop(ctx, TERM_X, TERM_Y, TERM_W, h, LAYOUT.windowRadius);
+    roundRectTop(ctx, GEOMETRY.termX, GEOMETRY.termY, GEOMETRY.termW, h, LAYOUT.windowRadius);
     ctx.fill();
 
     // Bottom border (subtle glass separator)
     ctx.fillStyle = COLORS.titleBarBorder;
-    ctx.fillRect(TERM_X, TERM_Y + h - 1, TERM_W, 1);
+    ctx.fillRect(GEOMETRY.termX, GEOMETRY.termY + h - 1, GEOMETRY.termW, 1);
 
-    // Traffic lights
-    const dotY = TERM_Y + h / 2;
-    const dotStartX = TERM_X + LAYOUT.trafficDotsLeftMargin + LAYOUT.trafficDotRadius;
+    // Traffic lights (conditionally rendered)
+    const dotY = GEOMETRY.termY + h / 2;
+    const dotStartX = GEOMETRY.termX + LAYOUT.trafficDotsLeftMargin + LAYOUT.trafficDotRadius;
     const r = LAYOUT.trafficDotRadius;
     const spacing = LAYOUT.trafficDotSpacing;
-    const dotColors = [COLORS.trafficRed, COLORS.trafficYellow, COLORS.trafficGreen];
-    for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = dotColors[i];
-      ctx.beginPath();
-      ctx.arc(dotStartX + i * spacing, dotY, r, 0, Math.PI * 2);
-      ctx.fill();
+
+    if (WINDOW_CONTROLS) {
+      const dotColors = [COLORS.trafficRed, COLORS.trafficYellow, COLORS.trafficGreen];
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = dotColors[i];
+        ctx.beginPath();
+        ctx.arc(dotStartX + i * spacing, dotY, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    const textY = TERM_Y + h / 2 + 5;
+    const textY = GEOMETRY.termY + h / 2 + 5;
 
     // "ccreplay" text after traffic lights
     ctx.font = font(13);
@@ -127,7 +129,7 @@ export class FrameRenderer {
 
     // Right: duration
     ctx.textAlign = "right";
-    ctx.fillText(formatDuration(this.session.duration), TERM_X + TERM_W - LAYOUT.innerPadding, textY);
+    ctx.fillText(formatDuration(this.session.duration), GEOMETRY.termX + GEOMETRY.termW - LAYOUT.innerPadding, textY);
 
     ctx.textAlign = "left";
   }
@@ -153,21 +155,23 @@ export class FrameRenderer {
           ? { entry: this.entries[this.entries.length - 1], idx: this.entries.length - 1 }
           : null;
         this.drawContentFrame(lingerStart - 1, last);
-        drawStatusBar(ctx, lingerStart - 1, this.totalFrames, this.introFrames, this.outroFrames, this.lingerFrames, last?.entry ?? null);
+        const progress = (lingerStart - 1 - this.introFrames) / this.contentFrames;
+        drawStatusBar(ctx, progress, last?.entry ?? null);
         this.lingerCache = createCanvas(LAYOUT.width, LAYOUT.height);
         this.lingerCache.getContext("2d").drawImage(this.canvas, 0, 0);
       }
       ctx.drawImage(this.lingerCache, 0, 0);
 
-      // Subtle vignette fade during linger
+      // Subtle vignette fade during linger — uses theme background color
       const lingerProgress = (frameNum - lingerStart) / (this.lingerFrames || 1);
-      ctx.fillStyle = `rgba(0, 0, 0, ${lingerProgress * 0.3})`;
+      ctx.fillStyle = withAlpha(COLORS.background, lingerProgress * 0.3);
       ctx.fillRect(0, 0, LAYOUT.width, LAYOUT.height);
     } else {
       ctx.drawImage(this.staticBg, 0, 0);
       const found = this.findEntryAtFrame(frameNum);
       this.drawContentFrame(frameNum, found);
-      drawStatusBar(ctx, frameNum, this.totalFrames, this.introFrames, this.outroFrames, this.lingerFrames, found?.entry ?? null);
+      const progress = (frameNum - this.introFrames) / this.contentFrames;
+      drawStatusBar(ctx, progress, found?.entry ?? null);
     }
 
     return (this.canvas as any).data() as Buffer;
@@ -234,7 +238,8 @@ export class FrameRenderer {
         this.termState.addAssistantText(ev.text);
         break;
       case "tool_call": {
-        const tc = ev.toolCall!;
+        const tc = ev.toolCall;
+        if (!tc) break;
         const toolName = tc.name;
 
         if (toolName === "Agent") {
@@ -247,7 +252,8 @@ export class FrameRenderer {
         break;
       }
       case "tool_result": {
-        const tr = ev.toolResult!;
+        const tr = ev.toolResult;
+        if (!tr) break;
         if (tr.isError) {
           const toolName = tr.toolName || "Error";
           const strippedContent = tr.content.replace(/^Exit code \d+\n*/, "");

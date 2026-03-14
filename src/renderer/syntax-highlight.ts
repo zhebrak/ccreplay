@@ -1,14 +1,5 @@
 import type { TextSegment } from "./types.js";
-import { COLORS, ANSI_COLORS } from "./theme.js";
-
-const HIGHLIGHT_COLORS = {
-  keyword: "rgb(175, 135, 255)",
-  string: COLORS.success,
-  comment: ANSI_COLORS[90],
-  number: COLORS.warning,
-  type: ANSI_COLORS[36],
-  plain: COLORS.text,
-};
+import { HIGHLIGHT_COLORS } from "./theme.js";
 
 const JS_KEYWORDS = new Set([
   "const", "let", "var", "function", "return", "if", "else", "for", "while",

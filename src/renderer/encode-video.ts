@@ -58,6 +58,8 @@ export interface EncodeOptions {
   width: number;
   height: number;
   fps: number;
+  crf?: number;
+  preset?: string;
 }
 
 export function createEncoder(opts: EncodeOptions): {
@@ -74,8 +76,8 @@ export function createEncoder(opts: EncodeOptions): {
     "-i", "pipe:0",
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-crf", "23",
-    "-preset", "ultrafast",
+    "-crf", String(opts.crf ?? 23),
+    "-preset", opts.preset ?? "ultrafast",
     "-movflags", "+faststart",
     opts.outputPath,
   ], {

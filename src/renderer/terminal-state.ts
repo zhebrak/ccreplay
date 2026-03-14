@@ -5,13 +5,13 @@ import type { TextSegment, RenderItem, ItemKind } from "./types.js";
 
 export type { TextSegment, TerminalLine, ToolBox, InlineTool, SummaryLine, RenderItem, ItemKind } from "./types.js";
 
-/** Max chars per line inside a toolbox. Derived from shared LAYOUT constants:
- *  termW = width - outerPadding*2, bodyMaxW = termW - innerPadding*2,
- *  toolbox gets bodyMaxW - charWidth*4 indent, minus toolBoxPadding*2 for content. */
-const TOOLBOX_WRAP_CHARS = Math.floor(
-  (LAYOUT.width - LAYOUT.outerPadding * 2 - LAYOUT.innerPadding * 2
-    - LAYOUT.charWidth * 4 - LAYOUT.toolBoxPadding * 2) / LAYOUT.charWidth
-);
+/** Max chars per line inside a toolbox. Computed at call time so LAYOUT is current. */
+function getToolboxWrapChars(): number {
+  return Math.floor(
+    (LAYOUT.width - LAYOUT.outerPadding * 2 - LAYOUT.innerPadding * 2
+      - LAYOUT.charWidth * 4 - LAYOUT.toolBoxPadding * 2) / LAYOUT.charWidth
+  );
+}
 
 function countWrappedLines(text: string, maxChars: number): number {
   let count = 0;
@@ -101,6 +101,7 @@ export class TerminalState {
 
   addToolBox(toolName: string, content: string, isError?: boolean, isSuccess?: boolean): void {
     const borderColor = toolName === "Bash" ? COLORS.bashBorder : COLORS.claude;
+    const wrapChars = getToolboxWrapChars();
     this.items.push({
       kind: "toolbox",
       box: {
@@ -109,7 +110,7 @@ export class TerminalState {
         borderColor,
         hasError: isError,
         hasSuccess: isSuccess,
-        contentLineCount: countWrappedLines(content, TOOLBOX_WRAP_CHARS),
+        contentLineCount: countWrappedLines(content, wrapChars),
       },
     });
     this.lastItemKind = "toolbox";
@@ -141,15 +142,6 @@ export class TerminalState {
       color: COLORS.subtle,
     });
     this.items.push({ kind: "blank" });
-    this.lastItemKind = "divider";
-  }
-
-  addGap(text: string): void {
-    this.items.push({
-      kind: "divider",
-      text: ` ${text} `,
-      color: COLORS.subtle,
-    });
     this.lastItemKind = "divider";
   }
 
@@ -191,16 +183,12 @@ export class TerminalState {
     // Ratchet: target only increases (prevents jitter from hiddenLines fluctuation)
     this.targetScrollOffset = Math.max(this.targetScrollOffset, rawTarget);
 
-    if (this.scrollOffset < this.targetScrollOffset) {
-      this.scrollOffset = Math.min(
-        this.targetScrollOffset,
-        this.scrollOffset + linesPerFrame
-      );
-    } else if (this.scrollOffset > this.targetScrollOffset) {
-      this.scrollOffset = Math.max(
-        this.targetScrollOffset,
-        this.scrollOffset - linesPerFrame
-      );
+    const gap = this.targetScrollOffset - this.scrollOffset;
+    if (Math.abs(gap) < 0.01) {
+      this.scrollOffset = this.targetScrollOffset;
+    } else {
+      const smoothing = Math.min(linesPerFrame * 0.8, 0.5);
+      this.scrollOffset += gap * smoothing;
     }
   }
 

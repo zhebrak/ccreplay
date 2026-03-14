@@ -83,7 +83,7 @@ export function parseAnsiSegments(text: string): TextSegment[] {
     }
 
     // Strip any other escape sequences
-    const cleaned = part.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+    const cleaned = stripAnsi(part);
     if (cleaned) {
       segments.push({ text: cleaned, color: currentColor, bold: currentBold || undefined });
     }

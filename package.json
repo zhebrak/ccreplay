@@ -1,6 +1,6 @@
 {
   "name": "@zhebrak/ccreplay",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Terminal replay videos of Claude Code sessions",
   "type": "module",
   "bin": {
@@ -16,6 +16,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "smoke-test": "bash scripts/smoke-test.sh",
+    "generate-demo": "bash scripts/generate-demo.sh",
     "start": "node dist/cli.js",
     "prepublishOnly": "npm run build"
   },

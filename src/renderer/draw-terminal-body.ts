@@ -7,10 +7,6 @@ import type { TerminalState } from "./terminal-state.js";
 import type { RenderItem, ToolBox, InlineTool, SummaryLine } from "./types.js";
 import type { AllocatedEntry } from "../timeline/budget-allocator.js";
 
-const { termX: TERM_X, termY: TERM_Y, termW: TERM_W, termH: TERM_H,
-        bodyTop: BODY_TOP, bodyLeft: BODY_LEFT, bodyMaxWidth: BODY_MAX_WIDTH,
-        toolboxMarginBottom: TOOLBOX_MARGIN_BOTTOM } = GEOMETRY;
-
 function drawInlineTool(ctx: SKRSContext2D, tool: InlineTool, x: number, y: number, maxWidth: number, skipBorder?: boolean): number {
   const indent = LAYOUT.charWidth * 4;
 
@@ -134,7 +130,7 @@ export function drawTerminalBody(
   // Clip to terminal window body area
   ctx.save();
   ctx.beginPath();
-  ctx.rect(TERM_X, TERM_Y + LAYOUT.titleBarHeight, TERM_W, TERM_H - LAYOUT.titleBarHeight - LAYOUT.statusBarHeight);
+  ctx.rect(GEOMETRY.termX, GEOMETRY.termY + LAYOUT.titleBarHeight, GEOMETRY.termW, GEOMETRY.termH - LAYOUT.titleBarHeight - LAYOUT.statusBarHeight);
   ctx.clip();
 
   // Determine line-by-line reveal for streaming effect
@@ -152,7 +148,7 @@ export function drawTerminalBody(
   // Visible window offset - maps visible array index to global items index
   const visibleStartGlobal = termState.visibleStartIdx;
 
-  let y = BODY_TOP - termState.scrollPixelOffset;
+  let y = GEOMETRY.bodyTop - termState.scrollPixelOffset;
   let entryLineIdx = 0;
 
   for (let i = 0; i < items.length; i++) {
@@ -187,15 +183,15 @@ export function drawTerminalBody(
         // Full-line background (e.g. bash output)
         if (item.line.lineBgColor) {
           ctx.fillStyle = item.line.lineBgColor;
-          const bgX = BODY_LEFT + indent - 4;
-          const bgW = BODY_MAX_WIDTH - indent + 8;
+          const bgX = GEOMETRY.bodyLeft + indent - 4;
+          const bgW = GEOMETRY.bodyMaxWidth - indent + 8;
           roundRect(ctx, bgX, y - LAYOUT.fontSize - 2, bgW, LAYOUT.lineHeight, 4);
           ctx.fill();
         }
 
         // Gutter indicator for assistant messages
         if (item.line.hasGutter) {
-          const gx = BODY_LEFT + indent + LAYOUT.charWidth * 0.5;
+          const gx = GEOMETRY.bodyLeft + indent + LAYOUT.charWidth * 0.5;
           const gy = y - LAYOUT.fontSize - 2;
           const gh = LAYOUT.fontSize + 2;
           const gw = LAYOUT.charWidth * 0.6;
@@ -209,7 +205,7 @@ export function drawTerminalBody(
           indent += 3 * LAYOUT.charWidth;
         }
 
-        let x = BODY_LEFT + indent;
+        let x = GEOMETRY.bodyLeft + indent;
 
         // Compute character limit from charFraction
         let totalLineChars = 0;
@@ -257,20 +253,20 @@ export function drawTerminalBody(
 
       case "toolbox": {
         y += LAYOUT.toolBoxMarginY;
-        y = drawToolBox(ctx, item.box, BODY_LEFT + LAYOUT.charWidth * 2, y, BODY_MAX_WIDTH - LAYOUT.charWidth * 4);
-        y += TOOLBOX_MARGIN_BOTTOM;
+        y = drawToolBox(ctx, item.box, GEOMETRY.bodyLeft + LAYOUT.charWidth * 2, y, GEOMETRY.bodyMaxWidth - LAYOUT.charWidth * 4);
+        y += GEOMETRY.toolboxMarginBottom;
         break;
       }
 
       case "inline_tool": {
         const prevGlobal = globalIdx > 0 ? termState.items[globalIdx - 1] : null;
         const afterToolbox = prevGlobal?.kind === "toolbox";
-        y = drawInlineTool(ctx, item.tool, BODY_LEFT, y, BODY_MAX_WIDTH, afterToolbox);
+        y = drawInlineTool(ctx, item.tool, GEOMETRY.bodyLeft, y, GEOMETRY.bodyMaxWidth, afterToolbox);
         break;
       }
 
       case "summary": {
-        y = drawSummaryLine(ctx, item.summary, BODY_LEFT, y);
+        y = drawSummaryLine(ctx, item.summary, GEOMETRY.bodyLeft, y);
         break;
       }
 
@@ -283,8 +279,8 @@ export function drawTerminalBody(
 
         if (!text.trim()) {
           ctx.beginPath();
-          ctx.moveTo(BODY_LEFT + 20, lineY);
-          ctx.lineTo(BODY_LEFT + BODY_MAX_WIDTH - 20, lineY);
+          ctx.moveTo(GEOMETRY.bodyLeft + 20, lineY);
+          ctx.lineTo(GEOMETRY.bodyLeft + GEOMETRY.bodyMaxWidth - 20, lineY);
           ctx.stroke();
           y += LAYOUT.lineHeight;
           break;
@@ -292,10 +288,10 @@ export function drawTerminalBody(
 
         ctx.font = font(LAYOUT.fontSizeTitle);
         const tw = measureText(text);
-        const divCx = BODY_LEFT + BODY_MAX_WIDTH / 2;
+        const divCx = GEOMETRY.bodyLeft + GEOMETRY.bodyMaxWidth / 2;
 
         ctx.beginPath();
-        ctx.moveTo(BODY_LEFT + 20, lineY);
+        ctx.moveTo(GEOMETRY.bodyLeft + 20, lineY);
         ctx.lineTo(divCx - tw / 2 - 10, lineY);
         ctx.stroke();
 
@@ -306,7 +302,7 @@ export function drawTerminalBody(
 
         ctx.beginPath();
         ctx.moveTo(divCx + tw / 2 + 10, lineY);
-        ctx.lineTo(BODY_LEFT + BODY_MAX_WIDTH - 20, lineY);
+        ctx.lineTo(GEOMETRY.bodyLeft + GEOMETRY.bodyMaxWidth - 20, lineY);
         ctx.stroke();
 
         y += LAYOUT.lineHeight;

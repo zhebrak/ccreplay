@@ -1,4 +1,7 @@
-export const COLORS = {
+import type { ResolvedConfig } from "../config/schema.js";
+import { resolveAnsiColors } from "../config/resolve.js";
+
+export const COLORS: Record<string, string> = {
   claude: "rgb(215, 119, 87)",
   text: "rgb(255, 255, 255)",
   inactive: "rgb(153, 153, 153)",
@@ -9,13 +12,12 @@ export const COLORS = {
   permission: "rgb(177, 185, 249)",
   bashBorder: "rgb(253, 93, 177)",
   background: "rgb(18, 18, 24)",
-  userMessageBg: "rgb(55, 55, 55)",
   codeBg: "rgb(28, 36, 40)",
   bashMessageBg: "rgb(32, 40, 44)",
   titleBarBg: "rgb(20, 28, 32)",
   statusBarBg: "rgb(16, 24, 28)",
   progressFill: "rgb(215, 119, 87)",
-  progressBg: "rgb(40, 40, 40)",
+  progressBg: "rgb(80, 80, 80)",
 
   // Outer gradient / window chrome
   outerGradientStart: "rgb(10, 20, 24)",
@@ -27,16 +29,17 @@ export const COLORS = {
   trafficYellow: "rgb(255, 189, 46)",
   trafficGreen: "rgb(39, 201, 63)",
   cardBg: "rgba(22, 30, 36, 0.85)",
-} as const;
+};
 
 /** Convert any rgb()/rgba() color string to rgba() with the given alpha. */
 export function withAlpha(color: string, alpha: number): string {
-  const m = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
+  const m = color.match(/rgba?\(/);
   if (!m) return color;
-  return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+  const [r, g, b] = parseRgb(color);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export const LAYOUT = {
+export const LAYOUT: Record<string, number> = {
   width: 1920,
   height: 1080,
   fps: 60,
@@ -44,18 +47,18 @@ export const LAYOUT = {
   outerPadding: 40,
   titleBarHeight: 44,
   statusBarHeight: 48,
-  lineHeight: 28,
+  lineHeight: 32,
   scrollLinesPerFrame: 0.15,
-  fontSize: 16,
-  fontSizeLarge: 18,
-  fontSizeTitle: 14,
+  fontSize: 18,
+  fontSizeLarge: 20,
+  fontSizeTitle: 16,
   toolBoxPadding: 16,
   toolBoxRadius: 10,
   toolBoxBorderWidth: 2,
   toolBoxMarginY: 4,
 
-  charWidth: 9.6,
-  maxCharsPerLine: 175,
+  charWidth: 10.8,
+  maxCharsPerLine: 163,
 
   // Window chrome
   windowRadius: 16,
@@ -64,9 +67,9 @@ export const LAYOUT = {
   trafficDotRadius: 6,
   trafficDotSpacing: 20,
   trafficDotsLeftMargin: 20,
-} as const;
+};
 
-export const ANSI_COLORS: Record<number, string> = {
+export let ANSI_COLORS: Record<number, string> = {
   30: "rgb(80, 80, 80)",       // black
   31: "rgb(255, 107, 128)",    // red
   32: "rgb(78, 186, 101)",     // green
@@ -92,8 +95,6 @@ export function parseRgb(color: string): [number, number, number] {
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
-export type ColorKey = keyof typeof COLORS;
-
 /** Tool accent colors */
 export const TOOL_ACCENT: Record<string, string> = {
   Read: COLORS.claude,
@@ -106,21 +107,114 @@ export const TOOL_ACCENT: Record<string, string> = {
   Agent: COLORS.claude,
 };
 
-// Pre-computed terminal window geometry
-const termX = LAYOUT.outerPadding;
-const termY = LAYOUT.outerPadding;
-const termW = LAYOUT.width - LAYOUT.outerPadding * 2;
-const termH = LAYOUT.height - LAYOUT.outerPadding * 2;
+/** Syntax highlight colors — mutable, updated by initTheme() */
+export const HIGHLIGHT_COLORS: Record<string, string> = {
+  keyword: "rgb(175, 135, 255)",
+  string: COLORS.success,
+  comment: "rgb(128, 128, 128)",
+  number: COLORS.warning,
+  type: "rgb(0, 183, 235)",
+  plain: COLORS.text,
+};
 
-export const GEOMETRY = {
-  termX,
-  termY,
-  termW,
-  termH,
-  bodyTop: termY + LAYOUT.titleBarHeight + LAYOUT.innerPadding,
-  bodyLeft: termX + LAYOUT.innerPadding,
-  bodyMaxWidth: termW - LAYOUT.innerPadding * 2,
-  toolboxMarginBottom: LAYOUT.lineHeight * 0.7,
+// Pre-computed terminal window geometry — mutable, updated by initTheme()
+export const GEOMETRY: Record<string, number> = {
+  termX: 0, termY: 0, termW: 0, termH: 0,
+  bodyTop: 0, bodyLeft: 0, bodyMaxWidth: 0, toolboxMarginBottom: 0,
   progressBarHeight: 6,
   progressBarWidthRatio: 0.5,
-} as const;
+};
+recomputeGeometry();
+
+/** Whether to draw traffic light window controls */
+export let WINDOW_CONTROLS = true;
+
+function recomputeGeometry() {
+  GEOMETRY.termX = LAYOUT.outerPadding;
+  GEOMETRY.termY = LAYOUT.outerPadding;
+  GEOMETRY.termW = LAYOUT.width - LAYOUT.outerPadding * 2;
+  GEOMETRY.termH = LAYOUT.height - LAYOUT.outerPadding * 2;
+  GEOMETRY.bodyTop = LAYOUT.outerPadding + LAYOUT.titleBarHeight + LAYOUT.innerPadding;
+  GEOMETRY.bodyLeft = LAYOUT.outerPadding + LAYOUT.innerPadding;
+  GEOMETRY.bodyMaxWidth = GEOMETRY.termW - LAYOUT.innerPadding * 2;
+  GEOMETRY.toolboxMarginBottom = LAYOUT.lineHeight * 0.7;
+}
+
+/** Compute luminance from rgb string */
+function luminance(color: string): number {
+  const [r, g, b] = parseRgb(color);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+/** Initialize theme from resolved config. Must be called before rendering. */
+export function initTheme(config: ResolvedConfig): void {
+  const c = config.colors;
+
+  // Map config color keys to COLORS keys
+  COLORS.claude = c.accent;
+  COLORS.text = c.text;
+  COLORS.inactive = c.dimmed;
+  COLORS.subtle = c.subtle;
+  COLORS.background = c.background;
+  COLORS.success = c.success;
+  COLORS.error = c.error;
+  COLORS.warning = c.warning;
+  COLORS.titleBarBg = c.titleBarBg;
+  COLORS.statusBarBg = c.statusBarBg;
+  COLORS.outerGradientStart = c.gradientStart;
+  COLORS.outerGradientEnd = c.gradientEnd;
+  COLORS.codeBg = c.codeBg;
+  COLORS.bashMessageBg = c.bashBg;
+  COLORS.bashBorder = c.bashBorder;
+
+  // Derived colors
+  COLORS.progressFill = c.accent;
+  COLORS.progressBg = c.subtle;
+  COLORS.cardBg = withAlpha(c.background, 0.85);
+  COLORS.windowShadow = "rgba(0, 0, 0, 0.6)";
+
+  // Luminance-aware title bar border
+  const bgLum = luminance(c.background);
+  COLORS.titleBarBorder = bgLum > 128
+    ? "rgba(0, 0, 0, 0.06)"
+    : "rgba(255, 255, 255, 0.06)";
+
+  // Status bar border from themed cyan with alpha
+  const resolvedAnsi = resolveAnsiColors(config.ansiColors);
+  COLORS.statusBarBorder = withAlpha(resolvedAnsi[36] || "rgb(0, 183, 235)", 0.15);
+
+  // Update ANSI colors
+  ANSI_COLORS = resolvedAnsi;
+
+  // Update LAYOUT from config
+  LAYOUT.width = config.video.width;
+  LAYOUT.height = config.video.height;
+  LAYOUT.fps = config.video.fps;
+  LAYOUT.fontSize = config.font.size;
+  LAYOUT.fontSizeLarge = config.font.size + 2;
+  LAYOUT.fontSizeTitle = config.font.size - 2;
+  LAYOUT.lineHeight = config.font.lineHeight;
+  LAYOUT.outerPadding = config.window.outerPadding;
+  LAYOUT.innerPadding = config.window.innerPadding;
+  LAYOUT.windowRadius = config.window.radius;
+  LAYOUT.scrollLinesPerFrame = config.timing.scrollSpeed;
+
+  // Window controls toggle
+  WINDOW_CONTROLS = config.window.controls;
+
+  // Update syntax highlight colors
+  HIGHLIGHT_COLORS.keyword = config.syntaxColors.keyword;
+  HIGHLIGHT_COLORS.string = config.syntaxColors.string;
+  HIGHLIGHT_COLORS.comment = config.syntaxColors.comment;
+  HIGHLIGHT_COLORS.number = config.syntaxColors.number;
+  HIGHLIGHT_COLORS.type = config.syntaxColors.type;
+  HIGHLIGHT_COLORS.plain = c.text;
+
+  // Rebuild TOOL_ACCENT with new colors
+  for (const tool of Object.keys(TOOL_ACCENT)) {
+    TOOL_ACCENT[tool] = tool === "Bash" ? COLORS.bashBorder : COLORS.claude;
+  }
+
+  // Recompute geometry
+  recomputeGeometry();
+}

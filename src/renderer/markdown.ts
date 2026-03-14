@@ -114,6 +114,28 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   return blocks;
 }
 
+function segmentsVisualLength(segments: TextSegment[]): number {
+  let len = 0;
+  for (const s of segments) len += s.text.length;
+  return len;
+}
+
+function truncateSegments(segments: TextSegment[], maxLen: number): TextSegment[] {
+  const result: TextSegment[] = [];
+  let remaining = maxLen;
+  for (const seg of segments) {
+    if (remaining <= 0) break;
+    if (seg.text.length <= remaining) {
+      result.push({ ...seg });
+      remaining -= seg.text.length;
+    } else {
+      result.push({ ...seg, text: seg.text.slice(0, remaining) });
+      remaining = 0;
+    }
+  }
+  return result;
+}
+
 export function renderMarkdownToItems(blocks: MarkdownBlock[], contentIndent: number): RenderItem[] {
   const items: RenderItem[] = [];
 
@@ -171,10 +193,21 @@ export function renderMarkdownToItems(blocks: MarkdownBlock[], contentIndent: nu
       case "table": {
         if (block.rows.length === 0) break;
         const numCols = Math.max(...block.rows.map(r => r.length));
+
+        // Pre-parse all cells and cache formatted segments
+        const parsedCells: TextSegment[][][] = block.rows.map(row => {
+          const parsed: TextSegment[][] = [];
+          for (let c = 0; c < numCols; c++) {
+            parsed.push(parseInlineFormatting(row[c] || ""));
+          }
+          return parsed;
+        });
+
+        // Compute column widths from visual (post-formatting) lengths
         const colWidths: number[] = new Array(numCols).fill(0);
-        for (const row of block.rows) {
-          for (let c = 0; c < row.length; c++) {
-            colWidths[c] = Math.max(colWidths[c], row[c].length);
+        for (let r = 0; r < parsedCells.length; r++) {
+          for (let c = 0; c < numCols; c++) {
+            colWidths[c] = Math.max(colWidths[c], segmentsVisualLength(parsedCells[r][c]));
           }
         }
 
@@ -190,17 +223,27 @@ export function renderMarkdownToItems(blocks: MarkdownBlock[], contentIndent: nu
         }
 
         for (let r = 0; r < block.rows.length; r++) {
-          const row = block.rows[r];
-          let cellText = "";
-          for (let c = 0; c < numCols; c++) {
-            const cell = (row[c] || "").slice(0, colWidths[c]);
-            cellText += cell.padEnd(colWidths[c]);
-            if (c < numCols - 1) cellText += "  ";
-          }
           const isHeaderRow = block.hasHeader && r === 0;
-          const segments = isHeaderRow
-            ? [{ text: cellText, color: COLORS.text, bold: true }]
-            : parseInlineFormatting(cellText);
+          const segments: TextSegment[] = [];
+
+          for (let c = 0; c < numCols; c++) {
+            // Truncate segments to column width
+            const rawSegs = truncateSegments(parsedCells[r][c], colWidths[c]);
+            const cellSegs = isHeaderRow
+              ? rawSegs.map(s => ({ ...s, bold: true as const }))
+              : rawSegs;
+            const visLen = segmentsVisualLength(cellSegs);
+            const padLen = colWidths[c] - visLen;
+
+            segments.push(...cellSegs);
+            if (padLen > 0) {
+              segments.push({ text: " ".repeat(padLen), color: COLORS.text });
+            }
+            if (c < numCols - 1) {
+              segments.push({ text: "  ", color: COLORS.text });
+            }
+          }
+
           items.push({
             kind: "line",
             line: { segments, indent },

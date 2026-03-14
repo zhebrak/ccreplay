@@ -1,3 +1,4 @@
+.claude/
 node_modules/
 dist/
 *.mp4
@@ -5,3 +6,5 @@ dist/
 ffmpeg
 .ccvid-tmp/
 .DS_Store
+test-output/
+ccreplay.config.json
