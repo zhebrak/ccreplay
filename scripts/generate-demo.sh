@@ -6,5 +6,7 @@ cd "$ROOT_DIR"
 npm run build --silent 2>&1
 node dist/cli.js \
   --font-size 20 \
+  -d 30 \
+  -c "$ROOT_DIR/scripts/demo-config.json" \
   -o media/demo.mp4 \
   test/fixtures/demo-session.jsonl
