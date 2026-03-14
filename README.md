@@ -5,7 +5,9 @@
 
 Terminal replay videos of Claude Code sessions. Turns JSONL session logs into polished MP4 videos with syntax highlighting, tool call visualization, and smooth scrolling.
 
-<video src="https://github.com/user-attachments/assets/afb71640-c885-437e-8ed5-d7ec21f6e1a2" width="320" height="240" controls autoplay loop muted playsinline></video>
+<video src="https://github.com/user-attachments/assets/77907607-3af5-482d-822c-d7366b6f2021" width="320" height="240" controls autoplay loop muted playsinline></video>
+
+
 
 ## Install
 
